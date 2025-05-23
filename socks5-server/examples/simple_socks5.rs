@@ -4,6 +4,7 @@ use socks5_server::{
     proto::{Address, Error, Reply},
     Command, IncomingConnection, Server,
 };
+use tokio_rustls::{rustls::{pki_types, ServerConfig}, TlsAcceptor};
 use std::{io::Error as IoError, sync::Arc};
 use tokio::{
     io::{self, AsyncWriteExt},
@@ -11,11 +12,17 @@ use tokio::{
 };
 
 #[tokio::main]
-async fn main() -> Result<(), IoError> {
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let listener = TcpListener::bind("127.0.0.1:5000").await?;
     let auth = Arc::new(NoAuth) as Arc<_>;
 
-    let server = Server::new(listener, auth);
+    let certs = vec![];
+    let private_key = pki_types::PrivateKeyDer::from(pki_types::PrivatePkcs8KeyDer::from(vec![]));
+    let config = ServerConfig::builder().with_no_client_auth().with_single_cert(certs, private_key)?;
+
+    let tls_acceptor = TlsAcceptor::from(Arc::new(config));
+
+    let server = Server::new(listener, tls_acceptor, auth);
 
     while let Ok((conn, _)) = server.accept().await {
         tokio::spawn(async move {

@@ -8,6 +8,7 @@ use socks5_proto::handshake::{
     Method,
 };
 use tokio::net::TcpStream;
+use tokio_rustls::server::TlsStream;
 
 /// This trait is for defining the customized process of SOCKS5 authentication.
 ///
@@ -42,7 +43,7 @@ pub trait Auth {
     type Output;
 
     fn as_handshake_method(&self) -> Method;
-    async fn execute(&self, stream: &mut TcpStream) -> Self::Output;
+    async fn execute(&self, stream: &mut TlsStream<TcpStream>) -> Self::Output;
 }
 
 /// Not authenticate at all.
@@ -64,7 +65,7 @@ impl Auth for NoAuth {
         Method::NONE
     }
 
-    async fn execute(&self, _: &mut TcpStream) -> Self::Output {}
+    async fn execute(&self, _: &mut TlsStream<TcpStream>) -> Self::Output {}
 }
 
 /// Using username and password to authenticate.
@@ -91,7 +92,7 @@ impl Auth for Password {
         Method::PASSWORD
     }
 
-    async fn execute(&self, stream: &mut TcpStream) -> Self::Output {
+    async fn execute(&self, stream: &mut TlsStream<TcpStream>) -> Self::Output {
         let req = PasswordRequest::read_from(stream).await?;
 
         if (&req.username, &req.password) == (&self.username, &self.password) {

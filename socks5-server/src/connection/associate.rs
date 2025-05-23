@@ -4,6 +4,7 @@
 
 use bytes::{Bytes, BytesMut};
 use socks5_proto::{Address, Error as Socks5Error, Reply, Response, UdpHeader};
+use tokio_rustls::server::TlsStream;
 use std::{
     io::{Cursor, Error},
     marker::PhantomData,
@@ -29,7 +30,7 @@ pub mod state {
 /// Reply the client with [`Associate::reply()`] to complete the command negotiation.
 #[derive(Debug)]
 pub struct Associate<S> {
-    stream: TcpStream,
+    stream: TlsStream<TcpStream>,
     _state: PhantomData<S>,
 }
 
@@ -41,7 +42,7 @@ impl Associate<state::NeedReply> {
         mut self,
         reply: Reply,
         addr: Address,
-    ) -> Result<Associate<state::Ready>, (Error, TcpStream)> {
+    ) -> Result<Associate<state::Ready>, (Error, TlsStream<TcpStream>)> {
         let resp = Response::new(reply, addr);
 
         if let Err(err) = resp.write_to(&mut self.stream).await {
@@ -69,7 +70,7 @@ impl Associate<state::Ready> {
 
 impl<S> Associate<S> {
     #[inline]
-    pub(super) fn new(stream: TcpStream) -> Self {
+    pub(super) fn new(stream: TlsStream<TcpStream>) -> Self {
         Self {
             stream,
             _state: PhantomData,
@@ -85,20 +86,20 @@ impl<S> Associate<S> {
     /// Returns the local address that this stream is bound to.
     #[inline]
     pub fn local_addr(&self) -> Result<SocketAddr, Error> {
-        self.stream.local_addr()
+        self.stream.get_ref().0.local_addr()
     }
 
     /// Returns the remote address that this stream is connected to.
     #[inline]
     pub fn peer_addr(&self) -> Result<SocketAddr, Error> {
-        self.stream.peer_addr()
+        self.stream.get_ref().0.peer_addr()
     }
 
     /// Returns a shared reference to the underlying stream.
     ///
     /// Note that this may break the encapsulation of the SOCKS5 connection and you should not use this method unless you know what you are doing.
     #[inline]
-    pub fn get_ref(&self) -> &TcpStream {
+    pub fn get_ref(&self) -> &TlsStream<TcpStream> {
         &self.stream
     }
 
@@ -106,13 +107,13 @@ impl<S> Associate<S> {
     ///
     /// Note that this may break the encapsulation of the SOCKS5 connection and you should not use this method unless you know what you are doing.
     #[inline]
-    pub fn get_mut(&mut self) -> &mut TcpStream {
+    pub fn get_mut(&mut self) -> &mut TlsStream<TcpStream> {
         &mut self.stream
     }
 
     /// Consumes the [`Associate<S>`] and returns the underlying [`TcpStream`](tokio::net::TcpStream).
     #[inline]
-    pub fn into_inner(self) -> TcpStream {
+    pub fn into_inner(self) -> TlsStream<TcpStream> {
         self.stream
     }
 }

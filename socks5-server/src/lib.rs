@@ -8,6 +8,7 @@ use std::{
     task::{Context, Poll},
 };
 use tokio::net::TcpListener;
+use tokio_rustls::TlsAcceptor;
 
 pub mod auth;
 pub mod connection;
@@ -62,14 +63,15 @@ type ServerAcceptResult<A> = Result<
 /// ```
 pub struct Server<A> {
     listener: TcpListener,
+    tls_acceptor: TlsAcceptor,
     auth: AuthAdaptor<A>,
 }
 
 impl<A> Server<A> {
     /// Creates a new [`Server<A>`] with a [`TcpListener`](tokio::net::TcpListener) and an `Arc<dyn Auth<Output = A> + Send + Sync>`.
     #[inline]
-    pub fn new(listener: TcpListener, auth: AuthAdaptor<A>) -> Self {
-        Self { listener, auth }
+    pub fn new(listener: TcpListener, tls_acceptor: TlsAcceptor, auth: AuthAdaptor<A>) -> Self {
+        Self { listener, tls_acceptor, auth }
     }
 
     /// Accept an [`IncomingConnection`].
@@ -77,7 +79,9 @@ impl<A> Server<A> {
     /// The connection is only a freshly created TCP connection and may not be a valid SOCKS5 connection. You should call [`IncomingConnection::authenticate()`] to perform a SOCKS5 authentication handshake.
     #[inline]
     pub async fn accept(&self) -> ServerAcceptResult<A> {
-        let (stream, addr) = self.listener.accept().await?;
+        let (tcp_stream, addr) = self.listener.accept().await?;
+        let tls_acceptor = self.tls_acceptor.clone();
+        let stream = tls_acceptor.accept(tcp_stream).await?;
         Ok((IncomingConnection::new(stream, self.auth.clone()), addr))
     }
 
@@ -86,12 +90,13 @@ impl<A> Server<A> {
     /// The connection is only a freshly created TCP connection and may not be a valid SOCKS5 connection. You should call [`IncomingConnection::authenticate()`] to perform a SOCKS5 authentication handshake.
     ///
     /// If there is no connection to accept, Poll::Pending is returned and the current task will be notified by a waker. Note that on multiple calls to poll_accept, only the Waker from the Context passed to the most recent call is scheduled to receive a wakeup.
+    /**
     #[inline]
     pub fn poll_accept(&self, cx: &mut Context<'_>) -> Poll<ServerAcceptResult<A>> {
         self.listener
             .poll_accept(cx)
             .map_ok(|(stream, addr)| (IncomingConnection::new(stream, self.auth.clone()), addr))
-    }
+    }*/
 
     /// Returns the local address that this server is bound to.
     ///

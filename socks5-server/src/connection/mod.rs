@@ -8,6 +8,7 @@ use socks5_proto::{
     },
     Address, Command as ProtocolCommand, Error, ProtocolError, Request,
 };
+use tokio_rustls::{server::TlsStream, TlsAcceptor};
 use std::{fmt::Debug, io::Error as IoError, marker::PhantomData, net::SocketAddr};
 use tokio::{io::AsyncWriteExt, net::TcpStream};
 
@@ -28,7 +29,7 @@ pub mod state {
 ///
 /// This may not be a valid SOCKS5 connection. You should call [`IncomingConnection::authenticate()`] and [`IncomingConnection::wait()`] to perform a SOCKS5 connection negotiation.
 pub struct IncomingConnection<A, S> {
-    stream: TcpStream,
+    stream: TlsStream<TcpStream>,
     auth: AuthAdaptor<A>,
     _state: PhantomData<S>,
 }
@@ -41,7 +42,8 @@ impl<A> IncomingConnection<A, state::NeedAuthenticate> {
     /// Note that this method will not implicitly close the connection even if the handshake failed.
     pub async fn authenticate(
         mut self,
-    ) -> Result<(IncomingConnection<A, state::NeedCommand>, A), (Error, TcpStream)> {
+    ) -> Result<(IncomingConnection<A, state::NeedCommand>, A), (Error, TlsStream<TcpStream>)> {
+
         let req = match HandshakeRequest::read_from(&mut self.stream).await {
             Ok(req) => req,
             Err(err) => return Err((err, self.stream)),
@@ -85,7 +87,7 @@ impl<A> IncomingConnection<A, state::NeedCommand> {
     /// When encountering an error, the stream will be returned alongside the error.
     ///
     /// Note that this method will not implicitly close the connection even if the client sends an invalid command.
-    pub async fn wait(mut self) -> Result<Command, (Error, TcpStream)> {
+    pub async fn wait(mut self) -> Result<Command, (Error, TlsStream<TcpStream>)> {
         let req = match Request::read_from(&mut self.stream).await {
             Ok(req) => req,
             Err(err) => return Err((err, self.stream)),
@@ -105,7 +107,7 @@ impl<A> IncomingConnection<A, state::NeedCommand> {
 
 impl<A, S> IncomingConnection<A, S> {
     #[inline]
-    pub(crate) fn new(stream: TcpStream, auth: AuthAdaptor<A>) -> Self {
+    pub(crate) fn new(stream: TlsStream<TcpStream>, auth: AuthAdaptor<A>) -> Self {
         Self {
             stream,
             auth,
@@ -122,20 +124,20 @@ impl<A, S> IncomingConnection<A, S> {
     /// Returns the local address that this stream is bound to.
     #[inline]
     pub fn local_addr(&self) -> Result<SocketAddr, IoError> {
-        self.stream.local_addr()
+        self.stream.get_ref().0.local_addr()
     }
 
     /// Returns the remote address that this stream is connected to.
     #[inline]
     pub fn peer_addr(&self) -> Result<SocketAddr, IoError> {
-        self.stream.peer_addr()
+        self.stream.get_ref().0.peer_addr()
     }
 
     /// Returns a shared reference to the underlying stream.
     ///
     /// Note that this may break the encapsulation of the SOCKS5 connection and you should not use this method unless you know what you are doing.
     #[inline]
-    pub fn get_ref(&self) -> &TcpStream {
+    pub fn get_ref(&self) -> &TlsStream<TcpStream> {
         &self.stream
     }
 
@@ -143,13 +145,13 @@ impl<A, S> IncomingConnection<A, S> {
     ///
     /// Note that this may break the encapsulation of the SOCKS5 connection and you should not use this method unless you know what you are doing.
     #[inline]
-    pub fn get_mut(&mut self) -> &mut TcpStream {
+    pub fn get_mut(&mut self) -> &mut TlsStream<TcpStream> {
         &mut self.stream
     }
 
     /// Consumes the [`IncomingConnection`] and returns the underlying [`TcpStream`](tokio::net::TcpStream).
     #[inline]
-    pub fn into_inner(self) -> TcpStream {
+    pub fn into_inner(self) -> TlsStream<TcpStream> {
         self.stream
     }
 }
